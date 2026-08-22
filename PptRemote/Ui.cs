@@ -14,7 +14,7 @@ internal static class Theme
     public static readonly Color Accent = Color.FromArgb(255, 77, 46);
     public static readonly Color Live = Color.FromArgb(61, 220, 132);
     public static readonly Color SegOn = Color.FromArgb(42, 42, 47);
-    public static readonly Color Pin = Color.FromArgb(36, 18, 14);
+    public static readonly Color Pin = Color.FromArgb(16, 38, 26);
 
     public static Color SolidBack(Control? c)
     {
@@ -141,10 +141,10 @@ internal sealed class GlyphButton : Control
 
     public Color IconColor { get; set; } = Theme.Ink;
 
-    public GlyphButton(Glyph glyph, Action click)
+    public GlyphButton(Glyph glyph, Action click, int size = 28)
     {
         _glyph = glyph;
-        Size = new Size(28, 28);
+        Size = new Size(size, size);
         Cursor = Cursors.Hand;
         DoubleBuffered = true;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -193,7 +193,8 @@ internal sealed class GlyphButton : Control
             e.Graphics.FillPath(br, path);
         }
 
-        using var pen = new Pen(IconColor, 1.7f)
+        var u = Width / 28f;
+        using var pen = new Pen(IconColor, Math.Max(1.6f, 1.7f * u))
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
@@ -201,19 +202,21 @@ internal sealed class GlyphButton : Control
         };
         if (_glyph == Glyph.Close)
         {
-            e.Graphics.DrawLine(pen, 9, 9, Width - 10, Height - 10);
-            e.Graphics.DrawLine(pen, Width - 10, 9, 9, Height - 10);
+            var a = 9 * u;
+            var b = Width - 10 * u;
+            e.Graphics.DrawLine(pen, a, a, b, Height - 10 * u);
+            e.Graphics.DrawLine(pen, b, a, a, Height - 10 * u);
             return;
         }
 
-        var back = new Rectangle(8, 7, 11, 13);
-        var front = new Rectangle(11, 10, 11, 13);
-        using (var path = Theme.Round(back, 2))
+        var back = Rectangle.Round(new RectangleF(8 * u, 7 * u, 11 * u, 13 * u));
+        var front = Rectangle.Round(new RectangleF(11 * u, 10 * u, 11 * u, 13 * u));
+        using (var path = Theme.Round(back, Math.Max(2, (int)(2 * u))))
         {
             e.Graphics.DrawPath(pen, path);
         }
 
-        using (var path = Theme.Round(front, 2))
+        using (var path = Theme.Round(front, Math.Max(2, (int)(2 * u))))
         using (var hide = new SolidBrush(fill))
         {
             e.Graphics.FillPath(hide, path);

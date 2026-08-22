@@ -41,7 +41,7 @@ internal sealed class HostForm : Form
         ShowInTaskbar = false;
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
-        Size = new Size(328, 536);
+        Size = new Size(328, 560);
         BackColor = Theme.Bg;
         ForeColor = Theme.Ink;
         Font = new Font("Segoe UI", 10);
@@ -114,14 +114,14 @@ internal sealed class HostForm : Form
         _qrPane = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
         _qrWrap = new RoundBox
         {
-            Size = new Size(196, 196),
+            Size = new Size(268, 268),
             Fill = Color.White,
             Radius = Theme.Radius
         };
         _qr = new PictureBox
         {
-            Size = new Size(172, 172),
-            Location = new Point(12, 12),
+            Size = new Size(248, 248),
+            Location = new Point(10, 10),
             SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.White
         };
@@ -135,18 +135,20 @@ internal sealed class HostForm : Form
             Padding = new Padding(0),
             Margin = new Padding(0)
         };
+        var urlFont = new Font("Segoe UI", 11);
+        var copySize = TextRenderer.MeasureText("Hg", urlFont).Height;
         _url = new Label
         {
             AutoSize = true,
-            Font = new Font("Segoe UI", 9),
+            Font = urlFont,
             ForeColor = Theme.Accent,
             Cursor = Cursors.Hand,
-            Margin = new Padding(0, 6, 8, 0),
-            MaximumSize = new Size(230, 0)
+            Margin = new Padding(0, 0, 8, 0),
+            MaximumSize = new Size(240, 0)
         };
         _url.Click += (_, _) => CopyUrl();
-        _copyBtn = new GlyphButton(Glyph.Copy, CopyUrl);
-        _copyBtn.Margin = new Padding(0, 2, 0, 0);
+        _copyBtn = new GlyphButton(Glyph.Copy, CopyUrl, copySize);
+        _copyBtn.Margin = new Padding(0);
         _urlRow.Controls.Add(_url);
         _urlRow.Controls.Add(_copyBtn);
         _qrPane.Controls.Add(_qrWrap);
@@ -298,9 +300,16 @@ internal sealed class HostForm : Form
     private void LayoutQr()
     {
         var w = _qrPane.ClientSize.Width;
-        _qrWrap.Left = Math.Max(0, (w - _qrWrap.Width) / 2);
-        _qrWrap.Top = 4;
-        _urlRow.Top = _qrWrap.Bottom + 10;
+        var h = _qrPane.ClientSize.Height;
+        var urlH = Math.Max(28, _urlRow.PreferredSize.Height + 6);
+        var side = Math.Min(w, Math.Max(160, h - urlH - 8));
+        _qrWrap.Size = new Size(side, side);
+        var pad = Math.Max(8, side / 26);
+        _qr.Location = new Point(pad, pad);
+        _qr.Size = new Size(Math.Max(16, side - pad * 2), Math.Max(16, side - pad * 2));
+        _qrWrap.Left = Math.Max(0, (w - side) / 2);
+        _qrWrap.Top = 0;
+        _urlRow.Top = _qrWrap.Bottom + 8;
         _urlRow.Left = Math.Max(0, (w - _urlRow.Width) / 2);
     }
 
@@ -368,7 +377,7 @@ internal sealed class HostForm : Form
     private void RefreshNics()
     {
         var addrs = NetworkInfo.ListIpv4();
-        var key = string.Join("|", addrs.Select(a => a.Name + "=" + a.Ip)) + "#" + _selectedIp;
+        var key = string.Join("|", addrs.Select(a => a.Name + "=" + a.Ip + "=" + a.Network)) + "#" + _selectedIp;
         if (key == _nicKey && addrs.Any(a => a.Ip == _selectedIp))
         {
             return;
@@ -507,14 +516,16 @@ internal sealed class HostForm : Form
     private Control NicTile(NicAddr item, bool pinned)
     {
         var ip = item.Ip;
+        var network = item.Network.Length == 0 ? item.Name : item.Network;
+        var kind = string.Equals(network, item.Name, StringComparison.OrdinalIgnoreCase) ? "" : item.Name;
         return MakeTile(
             pinned ? "This connection" : "Other network",
-            item.Name,
-            ip,
+            network,
+            kind,
             pinned,
-            pinned ? Theme.Accent : Theme.Ink,
+            pinned ? Theme.Live : Theme.Ink,
             pinned ? null : () => Pick(ip),
-            pinned);
+            false);
     }
 
     private Control DeviceTile(string who, string detail, bool phone)
@@ -526,11 +537,11 @@ internal sealed class HostForm : Form
     {
         var tile = new RoundBox
         {
-            Height = 86,
+            Height = string.IsNullOrEmpty(detail) ? 56 : 72,
             Fill = pinned ? Theme.Pin : Theme.Card,
             Radius = Theme.Radius,
             Margin = new Padding(0, 0, 0, 8),
-            Padding = new Padding(14, 10, 14, 10),
+            Padding = new Padding(14, 8, 14, 6),
             Cursor = click == null ? Cursors.Default : Cursors.Hand
         };
         var kick = new Label
@@ -538,17 +549,8 @@ internal sealed class HostForm : Form
             Text = kicker,
             AutoSize = true,
             Font = new Font("Segoe UI", 8, FontStyle.Bold),
-            ForeColor = pinned ? Theme.Accent : Theme.Muted,
-            Location = new Point(14, 10),
-            BackColor = pinned ? Theme.Pin : Theme.Card
-        };
-        var name = new Label
-        {
-            Text = title,
-            AutoSize = true,
-            Font = new Font("Segoe UI", 11, FontStyle.Bold),
-            ForeColor = titleColor,
-            Location = new Point(14, 28),
+            ForeColor = pinned ? Theme.Live : Theme.Muted,
+            Location = new Point(14, 8),
             BackColor = pinned ? Theme.Pin : Theme.Card
         };
         var row = new FlowLayoutPanel
@@ -556,42 +558,56 @@ internal sealed class HostForm : Form
             AutoSize = true,
             WrapContents = false,
             FlowDirection = FlowDirection.LeftToRight,
-            Location = new Point(10, 50),
+            Location = new Point(10, 24),
             BackColor = pinned ? Theme.Pin : Theme.Card,
             Margin = new Padding(0)
         };
-        var line = new Label
+        var name = new Label
         {
-            Text = detail,
+            Text = title,
             AutoSize = true,
-            Font = new Font("Segoe UI", 9),
-            ForeColor = pinned ? Theme.Accent : Theme.Muted,
-            Margin = new Padding(4, 6, 8, 0),
+            Font = new Font("Segoe UI", 11, FontStyle.Bold),
+            ForeColor = titleColor,
+            Margin = new Padding(4, 4, 8, 0),
             BackColor = pinned ? Theme.Pin : Theme.Card,
-            Cursor = Cursors.Hand
+            Cursor = click == null && copy ? Cursors.Hand : Cursors.Default
         };
-        row.Controls.Add(line);
+        row.Controls.Add(name);
         if (copy)
         {
-            var copyBtn = new GlyphButton(Glyph.Copy, CopyUrl);
-            copyBtn.Margin = new Padding(0, 0, 0, 0);
+            var copyH = TextRenderer.MeasureText("Hg", name.Font).Height;
+            var copyBtn = new GlyphButton(Glyph.Copy, CopyUrl, copyH);
+            copyBtn.Margin = new Padding(0, 2, 0, 0);
             row.Controls.Add(copyBtn);
+            name.Click += (_, _) => CopyUrl();
         }
 
         tile.Controls.Add(kick);
-        tile.Controls.Add(name);
         tile.Controls.Add(row);
+        if (!string.IsNullOrEmpty(detail))
+        {
+            var line = new Label
+            {
+                Text = detail,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9),
+                ForeColor = pinned ? Theme.Live : Theme.Muted,
+                Location = new Point(14, 54),
+                BackColor = pinned ? Theme.Pin : Theme.Card
+            };
+            tile.Controls.Add(line);
+            if (click != null)
+            {
+                line.Click += (_, _) => click();
+            }
+        }
+
         if (click != null)
         {
             void Go(object? s, EventArgs e) => click();
             tile.Click += Go;
             kick.Click += Go;
             name.Click += Go;
-            line.Click += Go;
-        }
-        else if (copy)
-        {
-            line.Click += (_, _) => CopyUrl();
         }
 
         return tile;
