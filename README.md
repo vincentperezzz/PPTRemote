@@ -1,10 +1,10 @@
-# PPT Remote
+# PPTRemote
 
 Control Microsoft PowerPoint from your phone’s browser. No app store install, no Bluetooth. The PC runs a small tray app; the phone joins over the same Wi‑Fi (or hotspot).
 
 ## Download
 
-Get **`PptRemote.exe`** from the latest **[Release](../../releases/latest)**.
+Get **`PPTRemote.exe`** from the latest **[Release](../../releases/latest)**.
 
 One file. Double-click it. Windows does not need a separate .NET install.
 
@@ -19,7 +19,7 @@ The first run may trigger SmartScreen or a firewall prompt. Allow it on private 
 ## Use it
 
 1. Open your deck in PowerPoint.
-2. Click the **PPT Remote** tray icon.
+2. Click the **PPTRemote** tray icon.
 3. Scan the QR code, or type the link under it if the camera misses it.
 4. Start the slideshow from the phone (or from PowerPoint).
 
