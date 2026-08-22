@@ -38,15 +38,6 @@ Hover the tray icon to see PowerPoint status without opening the popup. Right-cl
 
 The exe hosts a local page on port **8765** (`http://<your-pc-ip>:8765`) and talks to PowerPoint on the same machine. Traffic stays on your LAN. It does not upload the deck.
 
-## Build from source
-
-Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-
-```bat
-dotnet publish PptRemote\PptRemote.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
-```
-
-Upload `dist\PptRemote.exe` as the GitHub Release asset.
 
 ## License
 
