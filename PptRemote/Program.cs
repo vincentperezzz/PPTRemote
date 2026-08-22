@@ -9,7 +9,7 @@ internal static class Program
         var port = Ports.Find(8765);
         var ppt = new PowerPointService();
         var hub = new ClientHub();
-        var form = new HostForm(port, hub);
+        var form = new HostForm(port, ppt, hub);
         _ = form.Handle;
         var server = AppServer.Start(port, ppt, hub);
         FirewallHelper.TryAllow(port, Application.ExecutablePath);
@@ -23,6 +23,7 @@ internal static class Program
         };
         tray.ContextMenuStrip.Items.Add("Open", null, (_, _) => form.ShowFromTray());
         tray.ContextMenuStrip.Items.Add("Quit", null, (_, _) => form.RequestQuit());
+        form.AttachTray(tray);
         tray.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left)
