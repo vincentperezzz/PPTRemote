@@ -16,19 +16,9 @@ internal static class AppServer
 
     public static WebApplication Start(int port, PowerPointService ppt, ClientHub hub)
     {
-        var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
-        var webRoot = Path.Combine(exeDir, "wwwroot");
-        if (!Directory.Exists(webRoot))
-        {
-            webRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-        }
-
-        var indexPath = Path.Combine(webRoot, "index.html");
-
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             ContentRootPath = AppContext.BaseDirectory,
-            WebRootPath = webRoot,
             ApplicationName = "PptRemote"
         });
         builder.Logging.ClearProviders();
@@ -40,15 +30,16 @@ internal static class AppServer
             await next();
             hub.Touch(ctx.Connection.RemoteIpAddress?.ToString(), ctx.Request.Path.Value ?? "");
         });
-        app.UseStaticFiles();
 
         app.MapGet("/", () =>
         {
-            var html = File.ReadAllText(indexPath);
+            var html = WebFiles.Text("index.html");
             var json = JsonSerializer.Serialize(ppt.Snapshot(), JsonOpts);
             html = html.Replace("null;/*BOOT*/", json + ";");
             return Results.Content(html, "text/html; charset=utf-8");
         });
+        app.MapGet("/app.js", () => Results.Text(WebFiles.Text("app.js"), "text/javascript; charset=utf-8"));
+        app.MapGet("/styles.css", () => Results.Text(WebFiles.Text("styles.css"), "text/css; charset=utf-8"));
         app.MapGet("/live.js", () =>
         {
             var json = JsonSerializer.Serialize(ppt.Snapshot(), JsonOpts);

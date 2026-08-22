@@ -10,22 +10,18 @@
     <AssemblyName>PptRemote</AssemblyName>
     <Version>1.0.0</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="wwwroot\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
+    <EmbeddedResource Include="wwwroot\**\*" />
+    <EmbeddedResource Include="app.ico" />
   </ItemGroup>
-  <Target Name="CopyWwwrootToPublish" AfterTargets="Publish">
-    <ItemGroup>
-      <WwwrootFiles Include="$(ProjectDir)wwwroot\**\*" />
-    </ItemGroup>
-    <MakeDir Directories="$(PublishDir)wwwroot" />
-    <Copy SourceFiles="@(WwwrootFiles)" DestinationFolder="$(PublishDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="false" />
-  </Target>
 </Project>

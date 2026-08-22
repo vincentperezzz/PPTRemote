@@ -5,6 +5,7 @@ __pycache__/
 bin/
 obj/
 publish/
+dist/
 .vs/
 *.user
 *.log

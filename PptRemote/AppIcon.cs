@@ -4,23 +4,27 @@ internal static class AppIcon
 {
     public static Icon Create()
     {
-        var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
+        var name = typeof(AppIcon).Assembly.GetManifestResourceNames()
+            .FirstOrDefault(n => n.EndsWith("app.ico", StringComparison.OrdinalIgnoreCase));
+        if (name != null)
         {
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using var brush = new SolidBrush(Color.FromArgb(255, 77, 46));
-            g.FillEllipse(brush, 1, 1, 30, 30);
-            using var white = new SolidBrush(Color.White);
-            var play = new Point[]
+            using var stream = typeof(AppIcon).Assembly.GetManifestResourceStream(name);
+            if (stream != null)
             {
-                new Point(12, 8),
-                new Point(12, 24),
-                new Point(24, 16)
-            };
-            g.FillPolygon(white, play);
+                return new Icon(stream);
+            }
         }
 
-        return Icon.FromHandle(bmp.GetHicon());
+        var path = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(path) && File.Exists(path))
+        {
+            var associated = Icon.ExtractAssociatedIcon(path);
+            if (associated != null)
+            {
+                return associated;
+            }
+        }
+
+        return SystemIcons.Application;
     }
 }
