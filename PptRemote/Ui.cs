@@ -15,6 +15,8 @@ internal static class Theme
     public static readonly Color Live = Color.FromArgb(61, 220, 132);
     public static readonly Color SegOn = Color.FromArgb(42, 42, 47);
     public static readonly Color Pin = Color.FromArgb(16, 38, 26);
+    public static readonly Color Amber = Color.FromArgb(251, 191, 36);
+    public static readonly Color Wait = Color.FromArgb(32, 26, 12);
 
     public static Color SolidBack(Control? c)
     {

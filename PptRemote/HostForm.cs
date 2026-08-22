@@ -8,7 +8,10 @@ internal sealed class HostForm : Form
     private readonly PowerPointService _ppt;
     private readonly ClientHub _hub;
     private readonly Label _url;
-    private readonly Label _status;
+    private readonly RoundBox _deck;
+    private readonly Label _deckKick;
+    private readonly Label _deckTitle;
+    private readonly Label _deckHint;
     private readonly VFlow _phones;
     private readonly VFlow _nics;
     private readonly VFlow _linkHost;
@@ -101,15 +104,49 @@ internal sealed class HostForm : Form
         head.Controls.Add(close, 1, 0);
         root.Controls.Add(head, 0, 0);
 
-        _status = new Label
+        _deck = new RoundBox
+        {
+            Height = 62,
+            Dock = DockStyle.Top,
+            Fill = Theme.Card,
+            Radius = Theme.Radius,
+            Margin = new Padding(0, 0, 0, 10)
+        };
+        _deckKick = new Label
         {
             AutoSize = true,
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            Font = new Font("Segoe UI", 8, FontStyle.Bold),
             ForeColor = Theme.Muted,
-            Margin = new Padding(0, 0, 0, 12),
-            MaximumSize = new Size(270, 0)
+            Location = new Point(14, 8),
+            BackColor = Theme.Card
         };
-        root.Controls.Add(_status, 0, 1);
+        _deckTitle = new Label
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            Font = new Font("Segoe UI", 11, FontStyle.Bold),
+            ForeColor = Theme.Ink,
+            Location = new Point(14, 26),
+            Size = new Size(250, 22),
+            BackColor = Theme.Card
+        };
+        _deckHint = new Label
+        {
+            AutoSize = true,
+            Font = new Font("Segoe UI", 8),
+            ForeColor = Theme.Muted,
+            Location = new Point(14, 48),
+            Visible = false,
+            BackColor = Theme.Card
+        };
+        _deck.Controls.Add(_deckKick);
+        _deck.Controls.Add(_deckTitle);
+        _deck.Controls.Add(_deckHint);
+        _deck.Resize += (_, _) =>
+        {
+            _deckTitle.Width = Math.Max(40, _deck.ClientSize.Width - 28);
+        };
+        root.Controls.Add(_deck, 0, 1);
 
         _qrPane = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
         _qrWrap = new RoundBox
@@ -453,26 +490,60 @@ internal sealed class HostForm : Form
         _statusKey = key;
         if (!s.connected)
         {
-            _status.ForeColor = Theme.Muted;
             _statusLine = s.message.Length == 0 ? "Waiting for PowerPoint" : s.message;
-            _status.Text = _statusLine;
+            PaintDeck("Waiting", _statusLine, "", Theme.Muted, Theme.Card);
             PushTray();
             return;
         }
 
+        var name = DeckName(s.title);
         if (s.slideshow)
         {
-            _status.ForeColor = Theme.Live;
-            _statusLine = $"LIVE  ·  {s.title}  ·  {s.index}/{s.total}" + (s.black ? "  ·  black" : "");
-            _status.Text = _statusLine;
+            var hint = $"{s.index} / {s.total}" + (s.black ? "  ·  black" : "");
+            _statusLine = $"LIVE  ·  {name}  ·  {hint}";
+            PaintDeck("LIVE", name, hint, Theme.Live, Theme.Pin);
             PushTray();
             return;
         }
 
-        _status.ForeColor = Color.FromArgb(251, 191, 36);
-        _statusLine = $"Deck open  ·  {s.title}  ·  start from the phone";
-        _status.Text = _statusLine;
+        _statusLine = $"Deck open  ·  {name}";
+        PaintDeck("Deck open", name, "Start from the phone", Theme.Amber, Theme.Wait);
         PushTray();
+    }
+
+    private void PaintDeck(string kick, string title, string hint, Color ink, Color fill)
+    {
+        _deck.Fill = fill;
+        _deck.Height = string.IsNullOrEmpty(hint) ? 56 : 70;
+        _deckKick.Text = kick;
+        _deckKick.ForeColor = ink;
+        _deckKick.BackColor = fill;
+        _deckTitle.Text = title;
+        _deckTitle.ForeColor = ink;
+        _deckTitle.BackColor = fill;
+        _deckTitle.Width = Math.Max(40, _deck.ClientSize.Width - 28);
+        _deckHint.Text = hint;
+        _deckHint.ForeColor = ink;
+        _deckHint.BackColor = fill;
+        _deckHint.Visible = hint.Length > 0;
+        _deck.Invalidate();
+    }
+
+    private static string DeckName(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return "Untitled";
+        }
+
+        try
+        {
+            return Path.GetFileNameWithoutExtension(title);
+        }
+        catch
+        {
+            return title;
+        }
     }
 
     private void PushTray()
