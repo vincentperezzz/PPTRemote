@@ -9,7 +9,7 @@ internal static class Program
         var port = Ports.Find(8765);
         var ppt = new PowerPointService();
         var hub = new ClientHub();
-        var form = new HostForm(port, ppt, hub);
+        var form = new HostForm(port, hub);
         _ = form.Handle;
         var server = AppServer.Start(port, ppt, hub);
         FirewallHelper.TryAllow(port, Application.ExecutablePath);
@@ -43,8 +43,9 @@ internal static class Program
             }
 
             ppt.Dispose();
+            Application.Exit();
         };
 
-        Application.Run(form);
+        Application.Run();
     }
 }

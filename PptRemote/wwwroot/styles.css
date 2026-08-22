@@ -13,6 +13,7 @@
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 html, body {
@@ -24,6 +25,7 @@ html, body {
   font-family: system-ui, -apple-system, "SF Pro Text", sans-serif;
   overscroll-behavior: none;
   user-select: none;
+  touch-action: manipulation;
 }
 
 button {
@@ -33,19 +35,39 @@ button {
   border: 0;
   padding: 0;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 #app {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: calc(8px + var(--safe-t)) 16px 0;
+  padding: calc(10px + var(--safe-t)) 16px 0;
+}
+
+.top {
+  padding-bottom: 22px;
 }
 
 .top-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.exit-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.exit-btn:active {
+  transform: scale(0.97);
 }
 
 .counter {
@@ -55,9 +77,12 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+#moreBtn {
+  margin-left: auto;
+}
+
 .pill {
   margin-left: 2px;
-  margin-right: auto;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -83,7 +108,7 @@ button {
 }
 
 .title {
-  margin-top: 2px;
+  margin-top: 8px;
   font-size: 13px;
   color: var(--muted);
   white-space: nowrap;
@@ -91,21 +116,30 @@ button {
   text-overflow: ellipsis;
 }
 
+.chrome {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  margin: 0 -16px;
+  padding: 0;
+  min-height: 0;
+}
+
 .seg {
-  margin: 14px 0 12px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  padding: 4px;
+  padding: 8px 16px calc(10px + var(--safe-b));
   background: var(--card);
-  border-radius: 12px;
+  border-radius: 0;
+  flex-shrink: 0;
 }
 
 .seg button {
-  height: 36px;
-  border-radius: 9px;
+  height: 44px;
+  border-radius: 11px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -118,18 +152,20 @@ button {
   flex: 1;
   min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .notes {
   height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 4px 2px 12px;
+  padding: 0 0 8px;
   font-size: 18px;
   line-height: 1.48;
   letter-spacing: -0.015em;
   white-space: pre-wrap;
   user-select: text;
+  touch-action: pan-y;
 }
 
 .notes.empty {
@@ -140,17 +176,28 @@ button {
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 10px;
+  padding: 0;
+  min-height: 0;
+  touch-action: none;
 }
 
 .preview img {
+  display: block;
   width: 100%;
-  border-radius: 12px;
+  max-width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 16px;
   background: #000;
   aspect-ratio: 16 / 9;
   object-fit: contain;
-  border: 1px solid var(--line);
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+  border: 0;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .preview-cap {
@@ -160,10 +207,17 @@ button {
 }
 
 .dock {
+  height: 50dvh;
+  flex: none;
   display: grid;
-  grid-template-columns: 1fr 1.15fr;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
-  padding: 10px 0 calc(10px + var(--safe-b));
+  margin: 14px 0 12px;
+  padding: 0;
+}
+
+#app.next-mode .dock {
+  height: 45dvh;
 }
 
 .dock.single {
@@ -171,10 +225,11 @@ button {
 }
 
 .nav {
-  height: 56px;
+  height: 100%;
+  min-height: 0;
   border-radius: 16px;
-  font-size: 17px;
-  font-weight: 650;
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .nav:disabled {
@@ -193,7 +248,7 @@ button {
 }
 
 .nav:active {
-  transform: scale(0.98);
+  transform: scale(0.985);
 }
 
 .sheet {
@@ -203,18 +258,19 @@ button {
   z-index: 20;
   display: flex;
   flex-direction: column;
-  padding: calc(8px + var(--safe-t)) 16px calc(12px + var(--safe-b));
+  padding: calc(40px + var(--safe-t)) 20px calc(48px + var(--safe-b));
 }
 
 .sheet-top {
   display: flex;
   align-items: center;
-  margin-bottom: 12px;
+  min-height: 56px;
+  margin-bottom: 22px;
 }
 
 .sheet-top h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
 }
 
@@ -224,7 +280,8 @@ button {
   font-size: 16px;
   font-weight: 650;
   width: auto;
-  padding: 0 8px;
+  min-height: 48px;
+  padding: 0 12px;
 }
 
 .grid {
@@ -234,16 +291,19 @@ button {
   -webkit-overflow-scrolling: touch;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding-bottom: 8px;
+  gap: 18px;
+  align-content: start;
+  padding: 8px 2px calc(48px + var(--safe-b));
+  touch-action: pan-y;
 }
 
 .card {
   background: var(--card);
   border: 2px solid transparent;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   text-align: left;
+  min-height: 132px;
 }
 
 .card.current {
@@ -257,6 +317,7 @@ button {
 .card img {
   width: 100%;
   aspect-ratio: 16 / 9;
+  min-height: 96px;
   object-fit: contain;
   background: #000;
   display: block;
@@ -265,13 +326,14 @@ button {
 .card .ph {
   width: 100%;
   aspect-ratio: 16 / 9;
+  min-height: 96px;
   background: #111;
 }
 
 .card span {
   display: block;
-  padding: 7px 8px 8px;
-  font-size: 12px;
+  padding: 10px 10px 12px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--muted);
 }
@@ -283,12 +345,13 @@ button {
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  padding-bottom: 12px;
 }
 
 .actions button {
-  height: 52px;
-  border-radius: 14px;
+  height: 56px;
+  border-radius: 16px;
   background: var(--card);
   border: 1px solid var(--line);
   font-size: 16px;

@@ -5,121 +5,160 @@ namespace PptRemote;
 internal sealed class HostForm : Form
 {
     private readonly int _port;
-    private readonly PowerPointService _ppt;
     private readonly ClientHub _hub;
-    private readonly Label _ip;
-    private readonly Label _url;
-    private readonly Label _status;
     private readonly Label _viewers;
-    private readonly Label _hint;
     private readonly PictureBox _qr;
     private readonly FlowLayoutPanel _nics;
+    private readonly Panel _extra;
+    private readonly Button _devicesBtn;
     private readonly System.Windows.Forms.Timer _tick;
     private string _selectedIp = "";
     private string _nicKey = "";
     private string _viewerKey = "";
     private bool _quit;
+    private bool _ready;
     private Image? _qrImage;
 
-    public HostForm(int port, PowerPointService ppt, ClientHub hub)
+    public HostForm(int port, ClientHub hub)
     {
         _port = port;
-        _ppt = ppt;
         _hub = hub;
         Text = "PPT Remote";
         Icon = AppIcon.Create();
-        StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(420, 740);
-        Size = new Size(460, 820);
-        BackColor = Color.FromArgb(12, 12, 14);
+        ShowInTaskbar = false;
+        FormBorderStyle = FormBorderStyle.None;
+        StartPosition = FormStartPosition.Manual;
+        Size = new Size(280, 420);
+        BackColor = Color.FromArgb(18, 18, 20);
         ForeColor = Color.FromArgb(244, 244, 245);
         Font = new Font("Segoe UI", 10);
-        FormBorderStyle = FormBorderStyle.FixedSingle;
-        MaximizeBox = false;
+        TopMost = true;
+        Padding = new Padding(0);
 
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(22, 18, 22, 16),
+            Padding = new Padding(14, 10, 14, 12),
             ColumnCount = 1,
-            RowCount = 10,
+            RowCount = 5,
             BackColor = BackColor
         };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(root);
 
-        root.Controls.Add(MkLabel("PPT Remote", 22, FontStyle.Bold, Color.White), 0, 0);
-        root.Controls.Add(MkLabel("On iPhone Safari, type this — or scan. Same Wi-Fi / hotspot.", 9, FontStyle.Regular, Color.FromArgb(154, 154, 163)), 0, 1);
-
-        _ip = MkLabel("—", 26, FontStyle.Bold, Color.White);
-        _ip.Font = new Font("Cascadia Mono", 22, FontStyle.Bold);
-        root.Controls.Add(_ip, 0, 2);
-
-        _url = MkLabel("", 11, FontStyle.Regular, Color.FromArgb(255, 77, 46));
-        root.Controls.Add(_url, 0, 3);
-
-        var btns = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = BackColor };
-        btns.Controls.Add(MkBtn("Copy address", CopyUrl));
-        btns.Controls.Add(MkBtn("Allow iPhone", AllowPhone));
-        btns.Controls.Add(MkBtn("Hide to tray", HideToTray));
-        root.Controls.Add(btns, 0, 4);
+        var head = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            ColumnCount = 3,
+            RowCount = 1,
+            BackColor = BackColor,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32));
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32));
+        var title = new Label
+        {
+            Text = "PPT Remote",
+            AutoSize = true,
+            Font = new Font("Segoe UI", 13, FontStyle.Bold),
+            ForeColor = Color.White,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        head.Controls.Add(title, 0, 0);
+        head.Controls.Add(IconBtn("⧉", CopyUrl), 1, 0);
+        head.Controls.Add(IconBtn("✕", HideToTray), 2, 0);
+        root.Controls.Add(head, 0, 0);
 
         _qr = new PictureBox
         {
-            Size = new Size(180, 180),
+            Size = new Size(220, 220),
             SizeMode = PictureBoxSizeMode.Zoom,
-            BackColor = Color.FromArgb(22, 22, 26),
-            Margin = new Padding(0, 12, 0, 8)
+            BackColor = Color.White,
+            Margin = new Padding(16, 4, 16, 8),
+            Anchor = AnchorStyles.None
         };
-        root.Controls.Add(_qr, 0, 5);
-
-        _viewers = MkLabel("Viewing this URL\nNobody yet — open it on the iPhone.", 10, FontStyle.Regular, Color.FromArgb(212, 212, 216));
-        root.Controls.Add(_viewers, 0, 6);
-
-        _nics = new FlowLayoutPanel
+        var qrWrap = new FlowLayoutPanel
         {
+            AutoSize = true,
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            AutoScroll = true,
             BackColor = BackColor
         };
-        root.Controls.Add(_nics, 0, 7);
+        qrWrap.Controls.Add(_qr);
+        root.Controls.Add(qrWrap, 0, 1);
 
-        _status = MkLabel("", 10, FontStyle.Regular, Color.FromArgb(154, 154, 163));
-        root.Controls.Add(_status, 0, 8);
+        _devicesBtn = MkBtn("Devices  ▸", ToggleExtra);
+        _devicesBtn.Dock = DockStyle.Top;
+        _devicesBtn.Width = 240;
+        root.Controls.Add(_devicesBtn, 0, 2);
 
-        _hint = MkLabel("If Safari loads then gets stuck, tap Allow iPhone once (blue Yes on the Windows prompt).", 9, FontStyle.Regular, Color.FromArgb(154, 154, 163));
-        root.Controls.Add(_hint, 0, 9);
+        _extra = new Panel
+        {
+            Visible = false,
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+            BackColor = BackColor
+        };
+        _viewers = new Label
+        {
+            Text = "Nobody connected.",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(154, 154, 163),
+            Font = new Font("Segoe UI", 9),
+            MaximumSize = new Size(240, 0),
+            Margin = new Padding(0, 4, 0, 8)
+        };
+        _nics = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            BackColor = BackColor,
+            Dock = DockStyle.Top
+        };
+        _extra.Controls.Add(_nics);
+        _extra.Controls.Add(_viewers);
+        _viewers.Dock = DockStyle.Top;
+        _nics.Dock = DockStyle.Top;
+        root.Controls.Add(_extra, 0, 3);
 
-        var quitRow = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, BackColor = BackColor };
-        quitRow.Controls.Add(MkBtn("Quit", RequestQuit));
-        Controls.Add(quitRow);
+        var quit = MkBtn("Quit", RequestQuit);
+        quit.Dock = DockStyle.Top;
+        quit.BackColor = Color.FromArgb(255, 77, 46);
+        quit.ForeColor = Color.White;
+        quit.FlatAppearance.BorderColor = Color.FromArgb(255, 77, 46);
+        root.Controls.Add(quit, 0, 4);
 
         _tick = new System.Windows.Forms.Timer { Interval = 400 };
-        _tick.Tick += (_, _) =>
-        {
-            PaintStatus();
-            PaintViewers();
-        };
-        Shown += (_, _) =>
+        _tick.Tick += (_, _) => PaintViewers();
+        Load += (_, _) =>
         {
             RefreshNics();
             _tick.Start();
+            if (!_ready)
+            {
+                BeginInvoke(Hide);
+            }
         };
         var nicTimer = new System.Windows.Forms.Timer { Interval = 4000 };
         nicTimer.Tick += (_, _) => RefreshNics();
         nicTimer.Start();
         FormClosing += OnClosing;
+        Deactivate += (_, _) =>
+        {
+            if (!_quit && Visible)
+            {
+                Hide();
+            }
+        };
     }
 
     public void RequestQuit()
@@ -130,6 +169,8 @@ internal sealed class HostForm : Form
 
     public void ShowFromTray()
     {
+        _ready = true;
+        PlaceNearTray();
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
@@ -138,6 +179,21 @@ internal sealed class HostForm : Form
     private void HideToTray()
     {
         Hide();
+    }
+
+    private void PlaceNearTray()
+    {
+        var wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
+        Left = wa.Right - Width - 12;
+        Top = wa.Bottom - Height - 12;
+    }
+
+    private void ToggleExtra()
+    {
+        _extra.Visible = !_extra.Visible;
+        _devicesBtn.Text = _extra.Visible ? "Devices  ▾" : "Devices  ▸";
+        Height = _extra.Visible ? 520 : 420;
+        PlaceNearTray();
     }
 
     private void OnClosing(object? sender, FormClosingEventArgs e)
@@ -161,15 +217,6 @@ internal sealed class HostForm : Form
         }
 
         Clipboard.SetText(url);
-        _hint.Text = "Copied. Paste it into Safari.";
-    }
-
-    private void AllowPhone()
-    {
-        _hint.Text = "Windows will ask to allow this app. Tap Yes.";
-        Refresh();
-        FirewallHelper.PromptAllow(_port, Application.ExecutablePath);
-        _hint.Text = "If you tapped Yes, pull-to-refresh Safari. The phone should pop up under Viewing.";
     }
 
     private string CurrentUrl() => _selectedIp.Length == 0 ? "" : $"http://{_selectedIp}:{_port}";
@@ -187,8 +234,6 @@ internal sealed class HostForm : Form
         if (addrs.Count == 0)
         {
             _selectedIp = "";
-            _ip.Text = "No network";
-            _url.Text = "Turn on Wi-Fi or a hotspot";
             SetQr("");
             _nics.Controls.Clear();
             return;
@@ -204,9 +249,9 @@ internal sealed class HostForm : Form
         foreach (var item in addrs)
         {
             var ip = item.Ip;
-            var btn = MkBtn($"{item.Name}   {ip}", () => Pick(ip));
+            var btn = MkBtn($"{item.Name}  {ip}", () => Pick(ip));
             btn.ForeColor = ip == _selectedIp ? Color.FromArgb(255, 77, 46) : Color.White;
-            btn.Width = 360;
+            btn.Width = 240;
             _nics.Controls.Add(btn);
         }
     }
@@ -220,10 +265,7 @@ internal sealed class HostForm : Form
 
     private void ApplyIp(string ip)
     {
-        var url = $"http://{ip}:{_port}";
-        _ip.Text = ip;
-        _url.Text = url;
-        SetQr(url);
+        SetQr($"http://{ip}:{_port}");
     }
 
     private void SetQr(string url)
@@ -237,31 +279,10 @@ internal sealed class HostForm : Form
         using var gen = new QRCodeGenerator();
         using var data = gen.CreateQrCode(url, QRCodeGenerator.ECCLevel.Q);
         var png = new PngByteQRCode(data);
-        using var ms = new MemoryStream(png.GetGraphic(7));
+        using var ms = new MemoryStream(png.GetGraphic(8));
         _qrImage?.Dispose();
         _qrImage = new Bitmap(ms);
         _qr.Image = _qrImage;
-    }
-
-    private void PaintStatus()
-    {
-        var s = _ppt.Snapshot();
-        if (!s.connected)
-        {
-            _status.ForeColor = Color.FromArgb(154, 154, 163);
-            _status.Text = s.message;
-            return;
-        }
-
-        if (s.slideshow)
-        {
-            _status.ForeColor = Color.FromArgb(74, 222, 128);
-            _status.Text = $"Live  ·  {s.title}  ·  slide {s.index}/{s.total}" + (s.black ? "  ·  black" : "");
-            return;
-        }
-
-        _status.ForeColor = Color.FromArgb(251, 191, 36);
-        _status.Text = $"Deck open  ·  {s.title}  ·  start slideshow from the phone";
     }
 
     private void PaintViewers()
@@ -276,12 +297,13 @@ internal sealed class HostForm : Form
         _viewerKey = key;
         if (list.Count == 0)
         {
-            _viewers.Text = "Viewing this URL\nNobody yet — open it on the iPhone.";
+            _viewers.Text = "Nobody connected.";
             _viewers.ForeColor = Color.FromArgb(154, 154, 163);
+            _devicesBtn.Text = _extra.Visible ? "Devices  ▾" : "Devices  ▸";
             return;
         }
 
-        var lines = new List<string> { "Viewing this URL" };
+        var lines = new List<string>();
         foreach (var v in list)
         {
             var age = Math.Max(0, (int)(DateTime.Now - v.LastSeen).TotalSeconds);
@@ -292,18 +314,26 @@ internal sealed class HostForm : Form
 
         _viewers.Text = string.Join("\n", lines);
         _viewers.ForeColor = Color.FromArgb(74, 222, 128);
+        _devicesBtn.Text = (_extra.Visible ? "Devices  ▾  " : "Devices  ▸  ") + list.Count;
     }
 
-    private static Label MkLabel(string text, float size, FontStyle style, Color color)
+    private Button IconBtn(string text, Action click)
     {
-        return new Label
+        var b = new Button
         {
             Text = text,
-            AutoSize = true,
-            ForeColor = color,
-            Font = new Font("Segoe UI", size, style),
-            MaximumSize = new Size(380, 0)
+            Width = 28,
+            Height = 28,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(32, 32, 36),
+            ForeColor = Color.White,
+            Margin = new Padding(2, 0, 0, 0),
+            Cursor = Cursors.Hand,
+            Font = new Font("Segoe UI", 10)
         };
+        b.FlatAppearance.BorderColor = Color.FromArgb(50, 50, 56);
+        b.Click += (_, _) => click();
+        return b;
     }
 
     private Button MkBtn(string text, Action click)
@@ -311,15 +341,18 @@ internal sealed class HostForm : Form
         var b = new Button
         {
             Text = text,
-            AutoSize = true,
+            AutoSize = false,
+            Height = 36,
+            Width = 240,
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(22, 22, 26),
+            BackColor = Color.FromArgb(32, 32, 36),
             ForeColor = Color.White,
-            Padding = new Padding(10, 6, 10, 6),
-            Margin = new Padding(0, 0, 8, 8),
-            Cursor = Cursors.Hand
+            Margin = new Padding(0, 0, 0, 8),
+            Cursor = Cursors.Hand,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Padding = new Padding(10, 0, 10, 0)
         };
-        b.FlatAppearance.BorderColor = Color.FromArgb(39, 39, 44);
+        b.FlatAppearance.BorderColor = Color.FromArgb(50, 50, 56);
         b.Click += (_, _) => click();
         return b;
     }

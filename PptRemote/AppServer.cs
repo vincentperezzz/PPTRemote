@@ -74,6 +74,16 @@ internal static class AppServer
 
             return Results.File(path, "image/png");
         });
+        app.MapGet("/ahead.png", () =>
+        {
+            var path = ppt.AheadFile;
+            if (!File.Exists(path))
+            {
+                return Results.NotFound();
+            }
+
+            return Results.File(path, "image/png");
+        });
 
         _ = app.RunAsync();
         return app;

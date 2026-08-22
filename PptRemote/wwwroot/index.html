@@ -2,19 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="PPT Remote">
   <meta name="theme-color" content="#0a0a0b">
   <meta name="format-detection" content="telephone=no">
   <title>PPT Remote</title>
-  <link rel="stylesheet" href="/styles.css?v=6">
+  <link rel="stylesheet" href="/styles.css?v=15">
 </head>
 <body>
   <div id="app">
     <header class="top">
       <div class="top-row">
+        <button class="exit-btn" id="endTopBtn" type="button" hidden>Exit</button>
         <div class="counter" id="counter">– / –</div>
         <span class="pill" id="pill" hidden>LIVE</span>
         <button class="icon-btn" id="moreBtn" type="button" aria-label="More controls">More</button>
@@ -30,23 +31,25 @@
       <div class="title" id="title">Waiting for PowerPoint</div>
     </header>
 
-    <div class="seg" role="tablist" aria-label="Presenter pane">
-      <button type="button" role="tab" id="tabNotes" aria-selected="true">Notes</button>
-      <button type="button" role="tab" id="tabNext" aria-selected="false">Next slide</button>
-    </div>
-
     <main id="stage">
       <div class="notes" id="notes">Open a deck on the PC, then start the slideshow.</div>
       <div class="preview" id="preview" hidden>
-        <img id="previewImg" alt="Next slide">
+        <img id="previewImg" alt="Next animation" draggable="false">
         <div class="preview-cap" id="previewCap"></div>
       </div>
     </main>
 
     <footer class="dock" id="dock">
-      <button type="button" class="nav ghost" id="prevBtn" aria-label="Previous slide">Prev</button>
-      <button type="button" class="nav solid" id="nextBtn" aria-label="Next slide">Next</button>
+      <button type="button" class="nav ghost" id="prevBtn" aria-label="Previous">Prev</button>
+      <button type="button" class="nav solid" id="nextBtn" aria-label="Next">Next</button>
     </footer>
+
+    <div class="chrome">
+      <div class="seg" role="tablist" aria-label="Presenter pane">
+        <button type="button" role="tab" id="tabNotes" aria-selected="true">Notes</button>
+        <button type="button" role="tab" id="tabNext" aria-selected="false">Next slide</button>
+      </div>
+    </div>
   </div>
 
   <div id="grid" class="sheet" hidden>
@@ -78,6 +81,6 @@
   </div>
 
   <script>window.__BOOT = null;/*BOOT*/</script>
-  <script src="/app.js?v=6"></script>
+  <script src="/app.js?v=15"></script>
 </body>
 </html>

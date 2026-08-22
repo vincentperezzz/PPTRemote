@@ -22,6 +22,11 @@ internal sealed class PresenterState
     public int? nextIndex { get; set; }
     public bool thumbsReady { get; set; }
     public int thumbsVersion { get; set; }
+    public int clickIndex { get; set; }
+    public int clickCount { get; set; }
+    public int aheadVersion { get; set; }
+    public bool aheadReady { get; set; }
+    public string aheadLabel { get; set; } = "";
     public List<SlideInfo> slides { get; set; } = new();
     public string message { get; set; } = "";
 }
@@ -32,9 +37,11 @@ internal sealed class PowerPointService : IDisposable
     public const int PpSlideShowRunning = 1;
     public const int PpSlideShowBlackScreen = 3;
     public const int PpSlideShowWhiteScreen = 4;
+    public const int MsoAnimTriggerOnPageClick = 1;
     private static readonly HashSet<int> SkipPlaceholders = new() { 1, 10, 11, 13, 15, 16 };
 
     public string ThumbDir { get; }
+    public string AheadFile => Path.Combine(ThumbDir, "ahead.png");
     private readonly object _gate = new();
     private readonly BlockingCollection<Action> _jobs = new();
     private readonly Thread _sta;
@@ -46,6 +53,14 @@ internal sealed class PowerPointService : IDisposable
     private int _notesNext = 1;
     private readonly Dictionary<int, string> _notes = new();
     private int _thumbsVersion;
+    private int _aheadVersion;
+    private string _aheadKey = "";
+    private bool _aheadReady;
+    private string _aheadLabel = "";
+    private int _clickIndex;
+    private int _clickCount;
+    private int _aheadSlide;
+    private int _aheadClicks;
 
     public PowerPointService()
     {
@@ -170,6 +185,7 @@ internal sealed class PowerPointService : IDisposable
                 {
                     ExportOne();
                     PrefetchNotes();
+                    ExportAhead();
                 }
             }
             catch
@@ -265,6 +281,8 @@ internal sealed class PowerPointService : IDisposable
         int index;
         var black = false;
         var white = false;
+        var clickIndex = 0;
+        var clickCount = 0;
         if (slideshow)
         {
             var show = _app.SlideShowWindows.Item(1);
@@ -288,10 +306,13 @@ internal sealed class PowerPointService : IDisposable
             {
                 index = (int)view.CurrentShowPosition;
             }
+
+            clickIndex = ReadClick(view, true);
+            clickCount = ReadClick(view, false);
         }
         else
         {
-            pres = _app.ActivePresentation;
+            pres = BestPresentation();
             try
             {
                 index = (int)_app.ActiveWindow.View.Slide.SlideIndex;
@@ -299,6 +320,17 @@ internal sealed class PowerPointService : IDisposable
             catch
             {
                 index = 1;
+            }
+
+            try
+            {
+                if ((int)pres.Slides.Count != (int)_app.ActivePresentation.Slides.Count)
+                {
+                    index = 1;
+                }
+            }
+            catch
+            {
             }
         }
 
@@ -363,13 +395,56 @@ internal sealed class PowerPointService : IDisposable
         var key = full + "|" + total;
         if (key != _exportKey)
         {
+            var prev = _exportKey;
             _exportKey = key;
-            _exportNext = 1;
             _notesNext = 1;
             _notes.Clear();
             _thumbsVersion++;
-            WipePngs();
+            _aheadVersion++;
+            _aheadKey = "";
+            _aheadReady = false;
+            if (!string.IsNullOrEmpty(prev))
+            {
+                _exportNext = 1;
+                WipePngs();
+            }
+            else
+            {
+                _exportNext = 1;
+                while (_exportNext <= total && File.Exists(Path.Combine(ThumbDir, _exportNext + ".png")))
+                {
+                    _exportNext++;
+                }
+            }
         }
+
+        var aheadSlide = index;
+        var aheadClicks = 0;
+        var aheadLabel = "";
+        if (slideshow && clickIndex < clickCount)
+        {
+            aheadSlide = index;
+            aheadClicks = clickIndex + 1;
+            aheadLabel = "Next click · " + aheadClicks + " / " + clickCount;
+        }
+        else if (nextIndex != null)
+        {
+            aheadSlide = nextIndex.Value;
+            aheadClicks = 0;
+            aheadLabel = "Next slide · " + aheadSlide + " / " + total;
+        }
+        else
+        {
+            aheadSlide = index;
+            aheadClicks = clickCount;
+            aheadLabel = "Last click";
+        }
+
+        _clickIndex = clickIndex;
+        _clickCount = clickCount;
+        _aheadSlide = aheadSlide;
+        _aheadClicks = aheadClicks;
+        _aheadLabel = aheadLabel;
 
         var ready = total == 0 || _exportNext > total;
         lock (_gate)
@@ -387,6 +462,11 @@ internal sealed class PowerPointService : IDisposable
                 nextIndex = nextIndex,
                 thumbsReady = ready,
                 thumbsVersion = _thumbsVersion,
+                clickIndex = clickIndex,
+                clickCount = clickCount,
+                aheadVersion = _aheadVersion,
+                aheadReady = _aheadReady,
+                aheadLabel = aheadLabel,
                 slides = slides,
                 message = slideshow ? "" : "Slideshow not running"
             };
@@ -417,7 +497,7 @@ internal sealed class PowerPointService : IDisposable
             return;
         }
 
-        dynamic pres = _app.ActivePresentation;
+        dynamic pres = BestPresentation();
         var total = (int)pres.Slides.Count;
         if (_notesNext > total)
         {
@@ -444,12 +524,9 @@ internal sealed class PowerPointService : IDisposable
             return;
         }
 
-        if ((int)_app.SlideShowWindows.Count >= 1)
-        {
-            return;
-        }
-
-        dynamic pres = _app.ActivePresentation;
+        dynamic pres = (int)_app.SlideShowWindows.Count >= 1
+            ? _app.SlideShowWindows.Item(1).Presentation
+            : BestPresentation();
         var total = (int)pres.Slides.Count;
         if (_exportNext > total)
         {
@@ -486,6 +563,38 @@ internal sealed class PowerPointService : IDisposable
         }
     }
 
+    private dynamic BestPresentation()
+    {
+        dynamic? best = null;
+        var bestCount = -1;
+        var n = (int)_app!.Presentations.Count;
+        for (var i = 1; i <= n; i++)
+        {
+            var p = _app.Presentations.Item(i);
+            var c = 0;
+            try
+            {
+                c = (int)p.Slides.Count;
+            }
+            catch
+            {
+            }
+
+            if (c > bestCount)
+            {
+                best = p;
+                bestCount = c;
+            }
+        }
+
+        if (best == null)
+        {
+            throw new InvalidOperationException("Open a presentation first");
+        }
+
+        return best;
+    }
+
     private void EnsureShow()
     {
         if (!TryApp())
@@ -493,17 +602,34 @@ internal sealed class PowerPointService : IDisposable
             throw new InvalidOperationException("PowerPoint is not open");
         }
 
-        if ((int)_app!.SlideShowWindows.Count >= 1)
-        {
-            return;
-        }
-
-        if ((int)_app.Presentations.Count < 1)
+        if ((int)_app!.Presentations.Count < 1)
         {
             throw new InvalidOperationException("Open a presentation first");
         }
 
-        _app.ActivePresentation.SlideShowSettings.Run();
+        var best = BestPresentation();
+        if ((int)_app.SlideShowWindows.Count >= 1)
+        {
+            dynamic showing = _app.SlideShowWindows.Item(1).Presentation;
+            var showingCount = 0;
+            try
+            {
+                showingCount = (int)showing.Slides.Count;
+            }
+            catch
+            {
+            }
+
+            if (showingCount >= (int)best.Slides.Count)
+            {
+                return;
+            }
+
+            _app.SlideShowWindows.Item(1).View.Exit();
+            Thread.Sleep(200);
+        }
+
+        best.SlideShowSettings.Run();
         Thread.Sleep(200);
     }
 
@@ -547,10 +673,7 @@ internal sealed class PowerPointService : IDisposable
         {
             try
             {
-                var quick = ((string)slide.NotesPage.Shapes.Placeholders.Item(2).TextFrame.TextRange.Text)
-                    .Replace("\r", "\n")
-                    .Replace("\v", "\n")
-                    .Trim();
+                var quick = CleanNotes((string)slide.NotesPage.Shapes.Placeholders.Item(2).TextFrame.TextRange.Text);
                 if (quick.Length > 0)
                 {
                     return quick;
@@ -574,7 +697,7 @@ internal sealed class PowerPointService : IDisposable
                         continue;
                     }
 
-                    var text = ((string)shape.TextFrame.TextRange.Text).Replace("\r", "\n").Replace("\v", "\n").Trim();
+                    var text = CleanNotes((string)shape.TextFrame.TextRange.Text);
                     if (text.Length == 0)
                     {
                         continue;
@@ -623,6 +746,250 @@ internal sealed class PowerPointService : IDisposable
         }
     }
 
+    private static string CleanNotes(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return "";
+        }
+
+        var chars = text.Replace("\r\n", "\n").Replace('\r', '\n').ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+        {
+            var c = chars[i];
+            if (c != '\n' && c != '\t' && c < 32)
+            {
+                chars[i] = '\n';
+            }
+        }
+
+        return new string(chars).Trim();
+    }
+
+    private static int ReadClick(dynamic view, bool index)
+    {
+        try
+        {
+            var n = index ? (int)view.GetClickIndex() : (int)view.GetClickCount();
+            return n < 0 ? 0 : n;
+        }
+        catch
+        {
+            try
+            {
+                var n = index ? (int)view.GetClickIndex : (int)view.GetClickCount;
+                return n < 0 ? 0 : n;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+    }
+
+    private void ExportAhead()
+    {
+        if (!TryApp() || (int)_app!.Presentations.Count < 1 || _aheadSlide < 1)
+        {
+            return;
+        }
+
+        var key = _exportKey + "|" + _aheadSlide + "|" + _aheadClicks;
+        if (key == _aheadKey && File.Exists(AheadFile))
+        {
+            return;
+        }
+
+        dynamic pres;
+        try
+        {
+            pres = (int)_app.SlideShowWindows.Count >= 1
+                ? _app.SlideShowWindows.Item(1).Presentation
+                : BestPresentation();
+        }
+        catch
+        {
+            return;
+        }
+
+        try
+        {
+            RenderAhead(pres, _aheadSlide, _aheadClicks);
+            _aheadKey = key;
+            _aheadVersion++;
+            _aheadReady = true;
+            lock (_gate)
+            {
+                _state.aheadVersion = _aheadVersion;
+                _state.aheadReady = true;
+                _state.aheadLabel = _aheadLabel;
+            }
+        }
+        catch
+        {
+            try
+            {
+                var fallback = Path.Combine(ThumbDir, _aheadSlide + ".png");
+                if (File.Exists(fallback))
+                {
+                    File.Copy(fallback, AheadFile, true);
+                    _aheadKey = key;
+                    _aheadVersion++;
+                    _aheadReady = true;
+                    lock (_gate)
+                    {
+                        _state.aheadVersion = _aheadVersion;
+                        _state.aheadReady = true;
+                        _state.aheadLabel = _aheadLabel;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void RenderAhead(dynamic pres, int slideIndex, int clicksToApply)
+    {
+        dynamic? temp = null;
+        try
+        {
+            dynamic src = pres.Slides.Item(slideIndex);
+            temp = _app!.Presentations.Add(0);
+            src.Copy();
+            temp.Slides.Paste();
+            dynamic copy = temp.Slides.Item((int)temp.Slides.Count);
+            ApplyClickVisibility(copy, clicksToApply);
+            float w = (float)temp.PageSetup.SlideWidth;
+            float h = (float)temp.PageSetup.SlideHeight;
+            if (w <= 0)
+            {
+                w = 1;
+            }
+
+            var eh = Math.Max(1, (int)(960 * (h / w)));
+            copy.Export(AheadFile, "PNG", 960, eh);
+            temp.Saved = -1;
+            temp.Close();
+            temp = null;
+        }
+        finally
+        {
+            if (temp != null)
+            {
+                try
+                {
+                    temp.Saved = -1;
+                    temp.Close();
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
+    private static void ApplyClickVisibility(dynamic slide, int clicksToApply)
+    {
+        var entrance = new HashSet<int>();
+        var effects = new List<(int trigger, bool exit, int id)>();
+        try
+        {
+            var sequence = slide.TimeLine.MainSequence;
+            var n = (int)sequence.Count;
+            for (var i = 1; i <= n; i++)
+            {
+                var e = sequence.Item(i);
+                var trigger = 0;
+                try
+                {
+                    trigger = (int)e.Timing.TriggerType;
+                }
+                catch
+                {
+                }
+
+                var exit = false;
+                try
+                {
+                    exit = Flag(e.Exit);
+                }
+                catch
+                {
+                }
+
+                int id;
+                try
+                {
+                    id = (int)e.Shape.Id;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (!exit)
+                {
+                    entrance.Add(id);
+                }
+
+                effects.Add((trigger, exit, id));
+            }
+        }
+        catch
+        {
+            return;
+        }
+
+        var vis = new Dictionary<int, bool>();
+        var shapes = (int)slide.Shapes.Count;
+        for (var i = 1; i <= shapes; i++)
+        {
+            var sh = slide.Shapes.Item(i);
+            int id;
+            try
+            {
+                id = (int)sh.Id;
+            }
+            catch
+            {
+                continue;
+            }
+
+            vis[id] = !entrance.Contains(id);
+        }
+
+        var click = 0;
+        foreach (var e in effects)
+        {
+            if (e.trigger == MsoAnimTriggerOnPageClick)
+            {
+                click++;
+            }
+
+            if (click > clicksToApply)
+            {
+                break;
+            }
+
+            vis[e.id] = !e.exit;
+        }
+
+        for (var i = 1; i <= shapes; i++)
+        {
+            var sh = slide.Shapes.Item(i);
+            try
+            {
+                var id = (int)sh.Id;
+                sh.Visible = vis.TryGetValue(id, out var on) && on ? -1 : 0;
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private void WipePngs()
     {
         Directory.CreateDirectory(ThumbDir);
@@ -651,6 +1018,11 @@ internal sealed class PowerPointService : IDisposable
         nextIndex = s.nextIndex,
         thumbsReady = s.thumbsReady,
         thumbsVersion = s.thumbsVersion,
+        clickIndex = s.clickIndex,
+        clickCount = s.clickCount,
+        aheadVersion = s.aheadVersion,
+        aheadReady = s.aheadReady,
+        aheadLabel = s.aheadLabel,
         slides = s.slides.ToList(),
         message = s.message
     };

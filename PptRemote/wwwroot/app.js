@@ -20,8 +20,8 @@ const moreClose = document.getElementById("moreClose");
 const offline = document.getElementById("offline");
 const offlineHint = document.getElementById("offlineHint");
 const retryBtn = document.getElementById("retryBtn");
-const stage = document.getElementById("stage");
 const blackBtn = document.getElementById("blackBtn");
+const endTopBtn = document.getElementById("endTopBtn");
 
 let state = null;
 let mode = localStorage.getItem("ppt-mode") === "next" ? "next" : "notes";
@@ -30,8 +30,18 @@ let lastGridSig = "";
 let misses = 0;
 let touchX = 0;
 let touchY = 0;
+let swiping = false;
 
 offlineHint.textContent = "Connected as " + location.host;
+
+function cleanNotes(raw) {
+  return String(raw || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function showOffline(on) {
   offline.hidden = !on;
@@ -90,11 +100,21 @@ function setMode(next) {
   tabNext.setAttribute("aria-selected", next === "next" ? "true" : "false");
   notesEl.hidden = next !== "notes";
   previewEl.hidden = next !== "next";
+  document.getElementById("app").classList.toggle("next-mode", next === "next");
   paintPreview();
 }
 
 function paintPreview() {
   if (!state || mode !== "next") return;
+  if (state.aheadReady) {
+    previewImg.onerror = () => {
+      const n = state.nextIndex;
+      if (n) previewImg.src = thumbUrl(n);
+    };
+    previewImg.src = "/ahead.png?v=" + (state.aheadVersion || 0);
+    previewCap.textContent = state.aheadLabel || "Next click";
+    return;
+  }
   const n = state.nextIndex;
   if (!n) {
     previewImg.removeAttribute("src");
@@ -102,12 +122,12 @@ function paintPreview() {
     return;
   }
   previewImg.src = thumbUrl(n);
-  previewCap.textContent = "Next · " + n + " / " + state.total;
+  previewCap.textContent = "Next slide · " + n + " / " + state.total;
 }
 
 function paintNotes() {
   if (!state) return;
-  const text = (state.notes || "").replace(/\u000b/g, "\n").replace(/\r/g, "\n").trim();
+  const text = cleanNotes(state.notes);
   if (!state.connected) {
     notesEl.textContent = state.message || "Open a deck on the PC, then start the slideshow.";
     notesEl.classList.add("empty");
@@ -123,6 +143,10 @@ function paintNotes() {
 }
 
 function paintDock() {
+  const live = !!(state && state.slideshow);
+  endTopBtn.hidden = false;
+  endTopBtn.disabled = !live;
+  endTopBtn.style.opacity = live ? "1" : "0.35";
   if (!state || !state.connected) {
     dock.classList.add("single");
     prevBtn.hidden = true;
@@ -163,6 +187,11 @@ function apply(next) {
     next.nextIndex,
     next.thumbsVersion,
     next.thumbsReady,
+    next.clickIndex,
+    next.clickCount,
+    next.aheadVersion,
+    next.aheadReady,
+    next.aheadLabel,
     next.message,
     next.title,
   ].join("|");
@@ -214,6 +243,11 @@ function jump(index) {
   send("goto", "&n=" + index);
 }
 
+function endShow() {
+  more.hidden = true;
+  send("end");
+}
+
 tabNotes.addEventListener("click", () => setMode("notes"));
 tabNext.addEventListener("click", () => setMode("next"));
 gridBtn.addEventListener("click", () => {
@@ -244,10 +278,8 @@ nextBtn.addEventListener("click", () => {
   }
   send("next");
 });
-document.getElementById("endBtn").addEventListener("click", () => {
-  more.hidden = true;
-  send("end");
-});
+endTopBtn.addEventListener("click", endShow);
+document.getElementById("endBtn").addEventListener("click", endShow);
 blackBtn.addEventListener("click", () => send("black"));
 document.getElementById("whiteBtn").addEventListener("click", () => send("white"));
 document.getElementById("firstBtn").addEventListener("click", () => {
@@ -259,21 +291,34 @@ document.getElementById("lastBtn").addEventListener("click", () => {
   send("last");
 });
 
-stage.addEventListener("touchstart", (e) => {
+previewEl.addEventListener("touchstart", (e) => {
   const t = e.changedTouches[0];
   touchX = t.clientX;
   touchY = t.clientY;
+  swiping = true;
 }, { passive: true });
 
-stage.addEventListener("touchend", (e) => {
+previewEl.addEventListener("touchend", (e) => {
+  if (!swiping) return;
+  swiping = false;
+  if (mode !== "next") return;
+  if (!state || !state.slideshow) return;
   const t = e.changedTouches[0];
   const dx = t.clientX - touchX;
   const dy = t.clientY - touchY;
-  if (Math.abs(dx) < 64) return;
-  if (Math.abs(dx) < Math.abs(dy) * 1.35) return;
-  if (dx < 0) nextBtn.click();
-  else prevBtn.click();
+  if (Math.abs(dx) < 72) return;
+  if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
+  if (dx < 0) send("next");
+  else send("prev");
 }, { passive: true });
+
+previewEl.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+document.addEventListener("dblclick", (e) => e.preventDefault());
 
 showOffline(false);
 setMode(mode);
