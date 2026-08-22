@@ -52,6 +52,8 @@ internal sealed class PowerPointService : IDisposable
     private int _exportNext = 1;
     private int _notesNext = 1;
     private readonly Dictionary<int, string> _notes = new();
+    private readonly Dictionary<int, string> _slideSig = new();
+    private readonly string _metaFile;
     private int _thumbsVersion;
     private int _aheadVersion;
     private string _aheadKey = "";
@@ -69,6 +71,7 @@ internal sealed class PowerPointService : IDisposable
             "PptRemote",
             "thumbs");
         Directory.CreateDirectory(ThumbDir);
+        _metaFile = Path.Combine(ThumbDir, "deck.key");
         _state = Empty("Waiting for PowerPoint");
         _sta = new Thread(StaLoop)
         {
@@ -392,21 +395,23 @@ internal sealed class PowerPointService : IDisposable
             full = title;
         }
 
-        var key = full + "|" + total;
+        var key = DeckKey(full, total);
         if (key != _exportKey)
         {
-            var prev = _exportKey;
             _exportKey = key;
             _notesNext = 1;
             _notes.Clear();
+            _slideSig.Clear();
             _thumbsVersion++;
             _aheadVersion++;
             _aheadKey = "";
             _aheadReady = false;
-            if (!string.IsNullOrEmpty(prev))
+            var disk = ReadMeta();
+            if (disk != key)
             {
                 _exportNext = 1;
                 WipePngs();
+                WriteMeta(key);
             }
             else
             {
@@ -416,6 +421,12 @@ internal sealed class PowerPointService : IDisposable
                     _exportNext++;
                 }
             }
+        }
+
+        WatchSlide(pres, index);
+        if (nextIndex != null)
+        {
+            WatchSlide(pres, nextIndex.Value);
         }
 
         var aheadSlide = index;
@@ -534,24 +545,7 @@ internal sealed class PowerPointService : IDisposable
         }
 
         var i = _exportNext;
-        try
-        {
-            var slide = pres.Slides.Item(i);
-            float w = (float)pres.PageSetup.SlideWidth;
-            float h = (float)pres.PageSetup.SlideHeight;
-            if (w <= 0)
-            {
-                w = 1;
-            }
-
-            var eh = Math.Max(1, (int)(960 * (h / w)));
-            var dest = Path.Combine(ThumbDir, i + ".png");
-            slide.Export(dest, "PNG", 960, eh);
-        }
-        catch
-        {
-        }
-
+        ExportSlide(pres, i);
         _exportNext = i + 1;
         if (_exportNext > total)
         {
@@ -987,6 +981,154 @@ internal sealed class PowerPointService : IDisposable
             catch
             {
             }
+        }
+    }
+
+    private static string DeckKey(string full, int total)
+    {
+        var ticks = 0L;
+        try
+        {
+            if (full.Length > 2 && File.Exists(full))
+            {
+                ticks = File.GetLastWriteTimeUtc(full).Ticks;
+            }
+        }
+        catch
+        {
+        }
+
+        return full + "|" + total + "|" + ticks;
+    }
+
+    private string ReadMeta()
+    {
+        try
+        {
+            return File.Exists(_metaFile) ? File.ReadAllText(_metaFile) : "";
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private void WriteMeta(string key)
+    {
+        try
+        {
+            File.WriteAllText(_metaFile, key);
+        }
+        catch
+        {
+        }
+    }
+
+    private void WatchSlide(dynamic pres, int index)
+    {
+        if (index < 1)
+        {
+            return;
+        }
+
+        string sig;
+        try
+        {
+            sig = SlideSig(pres.Slides.Item(index));
+        }
+        catch
+        {
+            return;
+        }
+
+        if (_slideSig.TryGetValue(index, out var old) && old == sig)
+        {
+            return;
+        }
+
+        var seen = _slideSig.ContainsKey(index);
+        _slideSig[index] = sig;
+        if (!seen)
+        {
+            return;
+        }
+
+        ExportSlide(pres, index);
+        _thumbsVersion++;
+        _aheadKey = "";
+        _aheadReady = false;
+        lock (_gate)
+        {
+            _state.thumbsVersion = _thumbsVersion;
+        }
+    }
+
+    private static string SlideSig(dynamic slide)
+    {
+        var n = (int)slide.Shapes.Count;
+        var acc = unchecked(n * 397);
+        for (var i = 1; i <= n; i++)
+        {
+            try
+            {
+                var sh = slide.Shapes.Item(i);
+                acc = unchecked(acc * 31 + (int)sh.Id);
+                acc = unchecked(acc * 31 + (int)(float)sh.Width);
+                acc = unchecked(acc * 31 + (int)(float)sh.Height);
+                acc = unchecked(acc * 31 + (int)(float)sh.Left);
+                acc = unchecked(acc * 31 + (int)(float)sh.Top);
+            }
+            catch
+            {
+            }
+        }
+
+        return acc.ToString();
+    }
+
+    private void ExportSlide(dynamic pres, int index)
+    {
+        try
+        {
+            var slide = pres.Slides.Item(index);
+            float w = (float)pres.PageSetup.SlideWidth;
+            float h = (float)pres.PageSetup.SlideHeight;
+            if (w <= 0)
+            {
+                w = 1;
+            }
+
+            var eh = Math.Max(1, (int)(960 * (h / w)));
+            var dest = Path.Combine(ThumbDir, index + ".png");
+            var tmp = dest + ".tmp";
+            try
+            {
+                File.Delete(tmp);
+            }
+            catch
+            {
+            }
+
+            slide.Export(tmp, "PNG", 960, eh);
+            try
+            {
+                File.Delete(dest);
+            }
+            catch
+            {
+            }
+
+            File.Move(tmp, dest, true);
+            try
+            {
+                _slideSig[index] = SlideSig(slide);
+            }
+            catch
+            {
+            }
+        }
+        catch
+        {
         }
     }
 
