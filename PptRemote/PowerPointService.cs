@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace PptRemote;
@@ -38,6 +39,8 @@ internal sealed class PowerPointService : IDisposable
     public const int PpSlideShowBlackScreen = 3;
     public const int PpSlideShowWhiteScreen = 4;
     public const int MsoAnimTriggerOnPageClick = 1;
+    private const int ThumbPx = 640;
+    private const int AheadPx = 960;
     private static readonly HashSet<int> SkipPlaceholders = new() { 1, 10, 11, 13, 15, 16 };
 
     public string ThumbDir { get; }
@@ -49,7 +52,8 @@ internal sealed class PowerPointService : IDisposable
     private PresenterState _state;
     private dynamic? _app;
     private string _exportKey = "";
-    private int _exportNext = 1;
+    private readonly List<int> _thumbQueue = new();
+    private readonly HashSet<int> _thumbQueued = new();
     private int _notesNext = 1;
     private readonly Dictionary<int, string> _notes = new();
     private readonly Dictionary<int, string> _slideSig = new();
@@ -63,6 +67,13 @@ internal sealed class PowerPointService : IDisposable
     private int _clickCount;
     private int _aheadSlide;
     private int _aheadClicks;
+    private int _viewIndex;
+    private int? _viewNext;
+    private bool _slideshow;
+    private List<SlideInfo> _slideList = new();
+    private int _slideListTotal;
+    private string _slideListKey = "";
+    private long _slideListAt;
 
     public PowerPointService()
     {
@@ -164,7 +175,8 @@ internal sealed class PowerPointService : IDisposable
             Action? job = null;
             try
             {
-                _jobs.TryTake(out job, 100);
+                var wait = _thumbQueue.Count == 0 ? 100 : _slideshow ? 40 : 0;
+                _jobs.TryTake(out job, wait);
             }
             catch
             {
@@ -186,9 +198,16 @@ internal sealed class PowerPointService : IDisposable
                 Poll();
                 if (job == null)
                 {
-                    ExportOne();
-                    PrefetchNotes();
-                    ExportAhead();
+                    ExportThumbs(_slideshow);
+                    if (VisibleThumbsReady())
+                    {
+                        ExportAhead();
+                    }
+
+                    if (_thumbQueue.Count == 0)
+                    {
+                        PrefetchNotes();
+                    }
                 }
             }
             catch
@@ -252,6 +271,7 @@ internal sealed class PowerPointService : IDisposable
     private void Drop(string message)
     {
         ReleaseApp();
+        _slideshow = false;
         lock (_gate)
         {
             _state = Empty(message);
@@ -348,33 +368,6 @@ internal sealed class PowerPointService : IDisposable
             index = total;
         }
 
-        var slides = new List<SlideInfo>(total);
-        int? nextIndex = null;
-        for (var i = 1; i <= total; i++)
-        {
-            var slide = pres.Slides.Item(i);
-            var hidden = false;
-            try
-            {
-                hidden = Flag(slide.SlideShowTransition.Hidden);
-            }
-            catch
-            {
-            }
-
-            slides.Add(new SlideInfo { index = i, hidden = hidden });
-            if (nextIndex == null && i > index && !hidden)
-            {
-                nextIndex = i;
-            }
-        }
-
-        var notes = "";
-        if (index >= 1 && index <= total)
-        {
-            notes = LookupNotes(pres, index);
-        }
-
         string title;
         try
         {
@@ -402,6 +395,7 @@ internal sealed class PowerPointService : IDisposable
             _notesNext = 1;
             _notes.Clear();
             _slideSig.Clear();
+            _slideListKey = "";
             _thumbsVersion++;
             _aheadVersion++;
             _aheadKey = "";
@@ -409,18 +403,60 @@ internal sealed class PowerPointService : IDisposable
             var disk = ReadMeta();
             if (disk != key)
             {
-                _exportNext = 1;
                 WipePngs();
                 WriteMeta(key);
+                ResetThumbs(total, false);
             }
             else
             {
-                _exportNext = 1;
-                while (_exportNext <= total && File.Exists(Path.Combine(ThumbDir, _exportNext + ".png")))
-                {
-                    _exportNext++;
-                }
+                ResetThumbs(total, true);
             }
+        }
+
+        var now = Environment.TickCount64;
+        List<SlideInfo> slides;
+        if (_slideListKey != _exportKey || _slideListTotal != total || now - _slideListAt > 1000)
+        {
+            slides = new List<SlideInfo>(total);
+            for (var i = 1; i <= total; i++)
+            {
+                var hidden = false;
+                try
+                {
+                    hidden = Flag(pres.Slides.Item(i).SlideShowTransition.Hidden);
+                }
+                catch
+                {
+                }
+
+                slides.Add(new SlideInfo { index = i, hidden = hidden });
+            }
+
+            _slideList = slides;
+            _slideListKey = _exportKey;
+            _slideListTotal = total;
+            _slideListAt = now;
+        }
+        else
+        {
+            slides = _slideList;
+        }
+
+        int? nextIndex = null;
+        for (var i = 0; i < slides.Count; i++)
+        {
+            var item = slides[i];
+            if (item.index > index && !item.hidden)
+            {
+                nextIndex = item.index;
+                break;
+            }
+        }
+
+        var notes = "";
+        if (index >= 1 && index <= total)
+        {
+            notes = LookupNotes(pres, index);
         }
 
         WatchSlide(pres, index);
@@ -456,8 +492,17 @@ internal sealed class PowerPointService : IDisposable
         _aheadSlide = aheadSlide;
         _aheadClicks = aheadClicks;
         _aheadLabel = aheadLabel;
+        _viewIndex = index;
+        _viewNext = nextIndex;
+        _slideshow = slideshow;
+        if (nextIndex != null)
+        {
+            PreferThumb(nextIndex.Value);
+        }
 
-        var ready = total == 0 || _exportNext > total;
+        PreferThumb(index);
+
+        var ready = total == 0 || _thumbQueue.Count == 0;
         lock (_gate)
         {
             _state = new PresenterState
@@ -528,8 +573,50 @@ internal sealed class PowerPointService : IDisposable
         _notesNext = i + 1;
     }
 
-    private void ExportOne()
+    private void ResetThumbs(int total, bool resumeDisk)
     {
+        _thumbQueue.Clear();
+        _thumbQueued.Clear();
+        for (var i = 1; i <= total; i++)
+        {
+            if (resumeDisk && File.Exists(Path.Combine(ThumbDir, i + ".png")))
+            {
+                continue;
+            }
+
+            _thumbQueue.Add(i);
+            _thumbQueued.Add(i);
+        }
+    }
+
+    private void PreferThumb(int index)
+    {
+        if (!_thumbQueued.Contains(index))
+        {
+            return;
+        }
+
+        _thumbQueue.Remove(index);
+        _thumbQueue.Insert(0, index);
+    }
+
+    private bool VisibleThumbsReady()
+    {
+        if (_thumbQueued.Contains(_viewIndex))
+        {
+            return false;
+        }
+
+        return _viewNext is not int n || !_thumbQueued.Contains(n);
+    }
+
+    private void ExportThumbs(bool slideshow)
+    {
+        if (_thumbQueue.Count == 0)
+        {
+            return;
+        }
+
         if (!TryApp() || (int)_app!.Presentations.Count < 1)
         {
             return;
@@ -539,21 +626,40 @@ internal sealed class PowerPointService : IDisposable
             ? _app.SlideShowWindows.Item(1).Presentation
             : BestPresentation();
         var total = (int)pres.Slides.Count;
-        if (_exportNext > total)
+        if (_viewNext != null)
+        {
+            PreferThumb(_viewNext.Value);
+        }
+
+        PreferThumb(_viewIndex);
+
+        var budget = slideshow ? 80 : 400;
+        var cap = slideshow ? 2 : 8;
+        var clock = Stopwatch.StartNew();
+        var n = 0;
+        while (_thumbQueue.Count > 0 && n < cap && clock.ElapsedMilliseconds < budget)
+        {
+            var i = _thumbQueue[0];
+            _thumbQueue.RemoveAt(0);
+            _thumbQueued.Remove(i);
+            if (i >= 1 && i <= total)
+            {
+                ExportSlide(pres, i);
+            }
+
+            n++;
+        }
+
+        if (n == 0)
         {
             return;
         }
 
-        var i = _exportNext;
-        ExportSlide(pres, i);
-        _exportNext = i + 1;
-        if (_exportNext > total)
+        _thumbsVersion++;
+        lock (_gate)
         {
-            lock (_gate)
-            {
-                _state.thumbsReady = true;
-                _state.thumbsVersion = _thumbsVersion;
-            }
+            _state.thumbsReady = _thumbQueue.Count == 0;
+            _state.thumbsVersion = _thumbsVersion;
         }
     }
 
@@ -857,13 +963,8 @@ internal sealed class PowerPointService : IDisposable
             ApplyClickVisibility(copy, clicksToApply);
             float w = (float)temp.PageSetup.SlideWidth;
             float h = (float)temp.PageSetup.SlideHeight;
-            if (w <= 0)
-            {
-                w = 1;
-            }
-
-            var eh = Math.Max(1, (int)(960 * (h / w)));
-            copy.Export(AheadFile, "PNG", 960, eh);
+            var eh = ExportHeight(w, h, AheadPx);
+            copy.Export(AheadFile, "PNG", AheadPx, eh);
             temp.Saved = -1;
             temp.Close();
             temp = null;
@@ -1054,6 +1155,11 @@ internal sealed class PowerPointService : IDisposable
         }
 
         ExportSlide(pres, index);
+        if (_thumbQueued.Remove(index))
+        {
+            _thumbQueue.Remove(index);
+        }
+
         _thumbsVersion++;
         _aheadKey = "";
         _aheadReady = false;
@@ -1086,6 +1192,16 @@ internal sealed class PowerPointService : IDisposable
         return acc.ToString();
     }
 
+    private static int ExportHeight(float slideW, float slideH, int width)
+    {
+        if (slideW <= 0)
+        {
+            slideW = 1;
+        }
+
+        return Math.Max(1, (int)(width * (slideH / slideW)));
+    }
+
     private void ExportSlide(dynamic pres, int index)
     {
         try
@@ -1093,12 +1209,7 @@ internal sealed class PowerPointService : IDisposable
             var slide = pres.Slides.Item(index);
             float w = (float)pres.PageSetup.SlideWidth;
             float h = (float)pres.PageSetup.SlideHeight;
-            if (w <= 0)
-            {
-                w = 1;
-            }
-
-            var eh = Math.Max(1, (int)(960 * (h / w)));
+            var eh = ExportHeight(w, h, ThumbPx);
             var dest = Path.Combine(ThumbDir, index + ".png");
             var tmp = dest + ".tmp";
             try
@@ -1109,7 +1220,7 @@ internal sealed class PowerPointService : IDisposable
             {
             }
 
-            slide.Export(tmp, "PNG", 960, eh);
+            slide.Export(tmp, "PNG", ThumbPx, eh);
             try
             {
                 File.Delete(dest);

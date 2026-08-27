@@ -26,7 +26,8 @@ const endTopBtn = document.getElementById("endTopBtn");
 let state = null;
 let mode = localStorage.getItem("ppt-mode") === "next" ? "next" : "notes";
 let lastSig = "";
-let lastGridSig = "";
+let lastGridStruct = "";
+let lastGridVis = "";
 let misses = 0;
 let touchX = 0;
 let touchY = 0;
@@ -212,29 +213,44 @@ function apply(next) {
 
 function paintGrid() {
   if (!state) return;
-  const sig = state.thumbsVersion + "|" + state.total + "|" + state.index + "|" + JSON.stringify(state.slides);
-  if (sig === lastGridSig) return;
-  lastGridSig = sig;
-  gridList.innerHTML = "";
   const slides = state.slides || [];
-  for (const slide of slides) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "card";
-    if (slide.index === state.index) btn.classList.add("current");
-    if (slide.hidden) btn.classList.add("hidden-slide");
-    const img = document.createElement("img");
-    img.alt = "Slide " + slide.index;
-    img.loading = "lazy";
-    img.src = thumbUrl(slide.index);
-    img.addEventListener("error", () => {
-      img.replaceWith(Object.assign(document.createElement("div"), { className: "ph" }));
-    });
-    const cap = document.createElement("span");
-    cap.textContent = slide.hidden ? slide.index + "  hidden" : String(slide.index);
-    btn.append(img, cap);
-    btn.addEventListener("click", () => jump(slide.index));
-    gridList.append(btn);
+  const structSig = state.total + "|" + JSON.stringify(slides);
+  if (structSig !== lastGridStruct) {
+    lastGridStruct = structSig;
+    lastGridVis = "";
+    gridList.innerHTML = "";
+    for (const slide of slides) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "card";
+      btn.dataset.index = String(slide.index);
+      if (slide.hidden) btn.classList.add("hidden-slide");
+      const img = document.createElement("img");
+      img.alt = "Slide " + slide.index;
+      img.decoding = "async";
+      img.addEventListener("error", () => {
+        img.style.opacity = "0";
+      });
+      img.addEventListener("load", () => {
+        img.style.opacity = "1";
+      });
+      const cap = document.createElement("span");
+      cap.textContent = slide.hidden ? slide.index + "  hidden" : String(slide.index);
+      btn.append(img, cap);
+      btn.addEventListener("click", () => jump(slide.index));
+      gridList.append(btn);
+    }
+  }
+  const visSig = state.thumbsVersion + "|" + state.thumbsReady + "|" + state.index;
+  if (visSig === lastGridVis) return;
+  lastGridVis = visSig;
+  for (const btn of gridList.children) {
+    const i = +btn.dataset.index;
+    btn.classList.toggle("current", i === state.index);
+    const img = btn.querySelector("img");
+    if (!img) continue;
+    const url = thumbUrl(i);
+    if (img.getAttribute("src") !== url) img.src = url;
   }
 }
 
@@ -253,7 +269,8 @@ tabNext.addEventListener("click", () => setMode("next"));
 gridBtn.addEventListener("click", () => {
   more.hidden = true;
   grid.hidden = false;
-  lastGridSig = "";
+  lastGridStruct = "";
+  lastGridVis = "";
   paintGrid();
 });
 gridClose.addEventListener("click", () => {
@@ -327,7 +344,8 @@ if (view === "next") setMode("next");
 if (window.__BOOT) apply(window.__BOOT);
 if (view === "grid") {
   grid.hidden = false;
-  lastGridSig = "";
+  lastGridStruct = "";
+  lastGridVis = "";
   paintGrid();
 }
 poll();
