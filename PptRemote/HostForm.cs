@@ -24,6 +24,7 @@ internal sealed class HostForm : Form
     private readonly GlyphButton _copyBtn;
     private readonly FlowLayoutPanel _urlRow;
     private readonly System.Windows.Forms.Timer _tick;
+    private readonly System.Windows.Forms.Timer _nicTick;
     private NotifyIcon? _tray;
     private string _selectedIp = "";
     private string _nicKey = "";
@@ -280,9 +281,9 @@ internal sealed class HostForm : Form
             }
         };
         Resize += (_, _) => WinChrome.Round(this);
-        var nicTimer = new System.Windows.Forms.Timer { Interval = 4000 };
-        nicTimer.Tick += (_, _) => RefreshNics();
-        nicTimer.Start();
+        _nicTick = new System.Windows.Forms.Timer { Interval = 4000 };
+        _nicTick.Tick += (_, _) => RefreshNics();
+        _nicTick.Start();
         FormClosing += OnClosing;
         Deactivate += (_, _) =>
         {
@@ -303,6 +304,8 @@ internal sealed class HostForm : Form
         };
     }
 
+    public Action? Exiting { get; set; }
+
     public void AttachTray(NotifyIcon tray)
     {
         _tray = tray;
@@ -312,6 +315,15 @@ internal sealed class HostForm : Form
     public void RequestQuit()
     {
         _quit = true;
+        _tick.Stop();
+        _nicTick.Stop();
+        var exit = Exiting;
+        if (exit != null)
+        {
+            exit();
+            return;
+        }
+
         Close();
     }
 
@@ -378,6 +390,7 @@ internal sealed class HostForm : Form
         if (_quit || e.CloseReason != CloseReason.UserClosing)
         {
             _tick.Stop();
+            _nicTick.Stop();
             return;
         }
 
